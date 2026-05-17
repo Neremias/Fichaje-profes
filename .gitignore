@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+env/
+.venv/
+*.env
+!.env.example
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+media/
+staticfiles/
+.env
+
+# Node / React
+node_modules/
+frontend/dist/
+frontend/.env
+!frontend/.env.example
+frontend/build/
+
+# Docker
+*.override.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
