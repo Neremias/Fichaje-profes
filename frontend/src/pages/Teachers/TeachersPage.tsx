@@ -36,7 +36,7 @@ export default function TeachersPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['teachers', search, page],
-    queryFn: () => teachersApi.list({ search, page }),
+    queryFn: () => teachersApi.list({ search, page: String(page) }),
   });
 
   const { data: institutions } = useQuery({

@@ -105,7 +105,7 @@ export default function ReportsPage() {
     }
   };
 
-  const rows: any[] = report?.results ?? (Array.isArray(report) ? report : []);
+  const rows: any[] = Array.isArray(report) ? report : ((report as any)?.results ?? []);
 
   return (
     <div className="space-y-5">

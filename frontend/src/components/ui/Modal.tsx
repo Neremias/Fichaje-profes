@@ -3,7 +3,10 @@ import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ModalProps {
-  isOpen: boolean;
+  /** Preferred prop name */
+  isOpen?: boolean;
+  /** Alias for isOpen — accepted for convenience */
+  open?: boolean;
   onClose: () => void;
   title?: string;
   children: React.ReactNode;
@@ -18,9 +21,10 @@ const sizeClasses = {
   xl: 'max-w-2xl',
 };
 
-export function Modal({ isOpen, onClose, title, children, size = 'md', footer }: ModalProps) {
+export function Modal({ isOpen, open, onClose, title, children, size = 'md', footer }: ModalProps) {
+  const visible = isOpen ?? open ?? false;
   useEffect(() => {
-    if (!isOpen) return;
+    if (!visible) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -30,9 +34,9 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', footer }:
       document.removeEventListener('keydown', handler);
       document.body.style.overflow = '';
     };
-  }, [isOpen, onClose]);
+  }, [visible, onClose]);
 
-  if (!isOpen) return null;
+  if (!visible) return null;
 
   return (
     <div

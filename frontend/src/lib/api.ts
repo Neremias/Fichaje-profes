@@ -107,22 +107,24 @@ export const authApi = {
 };
 
 export const teachersApi = {
-  list: (params?: Record<string, string>) =>
+  list: (params?: Record<string, string | number | undefined>) =>
     api.get<PaginatedResponse<User>>('/api/teachers/', { params }).then((r) => r.data),
 
   get: (id: number) => api.get<User>(`/api/teachers/${id}/`).then((r) => r.data),
 
-  create: (data: Partial<User> & { password: string }) =>
+  create: (data: Record<string, unknown>) =>
     api.post<User>('/api/teachers/', data).then((r) => r.data),
 
-  update: (id: number, data: Partial<User>) =>
+  update: (id: number, data: Record<string, unknown>) =>
     api.patch<User>(`/api/teachers/${id}/`, data).then((r) => r.data),
 
   remove: (id: number) => api.delete(`/api/teachers/${id}/`),
+  /** Alias for remove */
+  delete: (id: number) => api.delete(`/api/teachers/${id}/`),
 };
 
 export const classroomsApi = {
-  list: (params?: Record<string, string>) =>
+  list: (params?: Record<string, string | number | undefined>) =>
     api.get<PaginatedResponse<Classroom>>('/api/classrooms/', { params }).then((r) => r.data),
 
   get: (id: number) => api.get<Classroom>(`/api/classrooms/${id}/`).then((r) => r.data),
@@ -134,13 +136,14 @@ export const classroomsApi = {
     api.patch<Classroom>(`/api/classrooms/${id}/`, data).then((r) => r.data),
 
   remove: (id: number) => api.delete(`/api/classrooms/${id}/`),
+  delete: (id: number) => api.delete(`/api/classrooms/${id}/`),
 
   listAll: () =>
     api.get<Classroom[]>('/api/classrooms/all/').then((r) => r.data),
 };
 
 export const subjectsApi = {
-  list: (params?: Record<string, string>) =>
+  list: (params?: Record<string, string | number | undefined>) =>
     api.get<PaginatedResponse<Subject>>('/api/subjects/', { params }).then((r) => r.data),
 
   get: (id: number) => api.get<Subject>(`/api/subjects/${id}/`).then((r) => r.data),
@@ -152,21 +155,23 @@ export const subjectsApi = {
     api.patch<Subject>(`/api/subjects/${id}/`, data).then((r) => r.data),
 
   remove: (id: number) => api.delete(`/api/subjects/${id}/`),
+  delete: (id: number) => api.delete(`/api/subjects/${id}/`),
 };
 
 export const schedulesApi = {
-  list: (params?: Record<string, string>) =>
+  list: (params?: Record<string, string | number | undefined>) =>
     api.get<PaginatedResponse<Schedule>>('/api/schedules/', { params }).then((r) => r.data),
 
   get: (id: number) => api.get<Schedule>(`/api/schedules/${id}/`).then((r) => r.data),
 
-  create: (data: Partial<Schedule>) =>
+  create: (data: Record<string, unknown>) =>
     api.post<Schedule>('/api/schedules/', data).then((r) => r.data),
 
-  update: (id: number, data: Partial<Schedule>) =>
+  update: (id: number, data: Record<string, unknown>) =>
     api.patch<Schedule>(`/api/schedules/${id}/`, data).then((r) => r.data),
 
   remove: (id: number) => api.delete(`/api/schedules/${id}/`),
+  delete: (id: number) => api.delete(`/api/schedules/${id}/`),
 };
 
 export const attendanceApi = {
@@ -179,7 +184,11 @@ export const attendanceApi = {
   dashboard: (date?: string) =>
     api.get<DashboardSummary>('/api/attendance/dashboard/', { params: date ? { date } : {} }).then((r) => r.data),
 
-  report: (params: { start_date: string; end_date: string; teacher_id?: number; institution_id?: number }) =>
+  report: (params: Record<string, unknown>) =>
+    api.get<AbsenceReport[]>('/api/attendance/report/', { params }).then((r) => r.data),
+
+  /** Alias for report — accepts date_from/date_to/teacher_id/status */
+  getReport: (params: Record<string, unknown>) =>
     api.get<AbsenceReport[]>('/api/attendance/report/', { params }).then((r) => r.data),
 
   validateLocation: (lat: number, lng: number, classroomId?: number) =>
@@ -191,11 +200,17 @@ export const attendanceApi = {
       })
       .then((r) => r.data),
 
-  exportCsv: (params: Record<string, string>) =>
+  exportCsv: (params: Record<string, unknown>) =>
     api.get('/api/attendance/export/csv/', { params, responseType: 'blob' }).then((r) => r.data),
 
-  exportXlsx: (params: Record<string, string>) =>
+  exportXlsx: (params: Record<string, unknown>) =>
     api.get('/api/attendance/export/xlsx/', { params, responseType: 'blob' }).then((r) => r.data),
+
+  /** Generic export — delegates to exportCsv or exportXlsx */
+  export: (format: 'csv' | 'xlsx', params: Record<string, unknown>) =>
+    format === 'csv'
+      ? api.get('/api/attendance/export/csv/', { params, responseType: 'blob' }).then((r) => r.data)
+      : api.get('/api/attendance/export/xlsx/', { params, responseType: 'blob' }).then((r) => r.data),
 };
 
 export const institutionsApi = {

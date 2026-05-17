@@ -17,6 +17,7 @@ export interface User {
   institution: Institution | null;
   phone: string;
   dni: string;
+  is_active: boolean;
 }
 
 export interface Subject {
@@ -118,6 +119,12 @@ export interface DashboardSummary {
   total_present: number;
   total_absent: number;
   teachers_present: TeacherStatus[];
+  // Extended fields used by DashboardPage
+  total_teachers: number;
+  present_count: number;
+  absent_count: number;
+  late_count: number;
+  teacher_statuses: TeacherStatus[];
 }
 
 export interface TeacherStatus {
@@ -129,6 +136,10 @@ export interface TeacherStatus {
   schedule_start: string | null;
   schedule_end: string | null;
   subject_name: string | null;
+  // Extended fields used by DashboardPage
+  status: 'present' | 'absent' | 'late' | 'no_schedule';
+  scheduled_time: string | null;
+  check_in_time: string | null;
 }
 
 export interface LoginCredentials {
