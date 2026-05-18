@@ -5,10 +5,10 @@ from .views import (
     LoginView,
     LogoutView,
     MeView,
-    UserListCreateView,
-    UserDetailView,
-    InstitutionListCreateView,
-    InstitutionDetailView,
+    DocenteListCreateView,
+    DocenteDetailView,
+    UsuarioListCreateView,
+    UsuarioDetailView,
 )
 
 urlpatterns = [
@@ -16,8 +16,8 @@ urlpatterns = [
     path('refresh/', TokenRefreshView.as_view(), name='auth-refresh'),
     path('logout/', LogoutView.as_view(), name='auth-logout'),
     path('me/', MeView.as_view(), name='auth-me'),
-    path('users/', UserListCreateView.as_view(), name='user-list'),
-    path('users/<int:pk>/', UserDetailView.as_view(), name='user-detail'),
-    path('institutions/', InstitutionListCreateView.as_view(), name='institution-list'),
-    path('institutions/<int:pk>/', InstitutionDetailView.as_view(), name='institution-detail'),
+    path('docentes/', DocenteListCreateView.as_view(), name='docente-list'),
+    path('docentes/<int:pk>/', DocenteDetailView.as_view(), name='docente-detail'),
+    path('usuarios/', UsuarioListCreateView.as_view(), name='usuario-list'),
+    path('usuarios/<int:pk>/', UsuarioDetailView.as_view(), name='usuario-detail'),
 ]

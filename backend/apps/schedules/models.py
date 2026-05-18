@@ -1,64 +1,93 @@
 from django.db import models
-from apps.users.models import User, Institution
-
-DAY_CHOICES = [
-    (0, 'Lunes'), (1, 'Martes'), (2, 'Miércoles'),
-    (3, 'Jueves'), (4, 'Viernes'), (5, 'Sábado'), (6, 'Domingo'),
-]
 
 
-class Subject(models.Model):
-    name = models.CharField(max_length=200)
-    code = models.CharField(max_length=20, blank=True)
-    career = models.CharField(max_length=200, blank=True)
-    institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name='subjects')
+class Carrera(models.Model):
+    class InstitucionChoices(models.TextChoices):
+        ICES = 'ices', 'ICES'
+        UCSE = 'ucse', 'UCSE'
+        OTRO_CONVENIO = 'otro_convenio', 'Otro Convenio'
+
+    institucion = models.CharField(max_length=20, choices=InstitucionChoices.choices)
+    codigo = models.CharField(max_length=10)
+    nombre = models.CharField(max_length=200)
+    duracion_anios = models.SmallIntegerField()
+
+    class Meta:
+        verbose_name = 'Carrera'
+        verbose_name_plural = 'Carreras'
+        ordering = ['nombre']
+
+    def __str__(self):
+        return f"{self.nombre} ({self.get_institucion_display()})"
+
+
+class Materia(models.Model):
+    codigo_siu = models.CharField(max_length=20)
+    nombre = models.CharField(max_length=200)
+    anio = models.SmallIntegerField()
+    activa = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = 'Materia'
         verbose_name_plural = 'Materias'
-        ordering = ['name']
+        ordering = ['nombre']
 
     def __str__(self):
-        return f"{self.name} ({self.institution.slug})"
+        return f"{self.nombre} (SIU: {self.codigo_siu})"
 
 
-class Classroom(models.Model):
-    name = models.CharField(max_length=100)
-    building = models.CharField(max_length=100, blank=True)
-    institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name='classrooms')
-    gps_latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
-    gps_longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
-    gps_radius_meters = models.IntegerField(default=100)
+class MateriaCarrera(models.Model):
+    materia = models.ForeignKey(Materia, on_delete=models.CASCADE, related_name='materia_carreras')
+    carrera = models.ForeignKey(Carrera, on_delete=models.CASCADE, related_name='materia_carreras')
+    anio_plan = models.SmallIntegerField()
 
     class Meta:
-        verbose_name = 'Aula'
-        verbose_name_plural = 'Aulas'
-        ordering = ['name']
+        verbose_name = 'Materia en Carrera'
+        verbose_name_plural = 'Materias en Carreras'
+        unique_together = [('materia', 'carrera')]
 
     def __str__(self):
-        return f"{self.name} — {self.institution.slug}"
+        return f"{self.materia} → {self.carrera} (año {self.anio_plan})"
 
 
-class Schedule(models.Model):
-    teacher = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='schedules',
-        limit_choices_to={'role': 'teacher'},
-    )
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='schedules')
-    classroom = models.ForeignKey(Classroom, on_delete=models.CASCADE, related_name='schedules')
-    day_of_week = models.IntegerField(choices=DAY_CHOICES)
-    start_time = models.TimeField()
-    end_time = models.TimeField()
-    is_active = models.BooleanField(default=True)
-    valid_from = models.DateField()
-    valid_until = models.DateField()
+class SlotHorario(models.Model):
+    class DiaSemanaChoices(models.TextChoices):
+        LUNES = 'lunes', 'Lunes'
+        MARTES = 'martes', 'Martes'
+        MIERCOLES = 'miercoles', 'Miércoles'
+        JUEVES = 'jueves', 'Jueves'
+        VIERNES = 'viernes', 'Viernes'
+        SABADO = 'sabado', 'Sábado'
+
+    materia = models.ForeignKey(Materia, on_delete=models.CASCADE, related_name='slots_horario')
+    dia_semana = models.CharField(max_length=10, choices=DiaSemanaChoices.choices)
+    hora_inicio = models.TimeField()
+    hora_fin = models.TimeField()
 
     class Meta:
-        verbose_name = 'Horario'
-        verbose_name_plural = 'Horarios'
-        ordering = ['day_of_week', 'start_time']
+        verbose_name = 'Slot Horario'
+        verbose_name_plural = 'Slots Horarios'
+        ordering = ['dia_semana', 'hora_inicio']
 
     def __str__(self):
-        return f"{self.teacher} — {self.subject} ({self.get_day_of_week_display()} {self.start_time})"
+        return f"{self.materia} — {self.get_dia_semana_display()} {self.hora_inicio:%H:%M}–{self.hora_fin:%H:%M}"
+
+
+class AsignacionDocente(models.Model):
+    class RolChoices(models.TextChoices):
+        TITULAR = 'titular', 'Titular'
+        ADJUNTO = 'adjunto', 'Adjunto'
+
+    docente = models.ForeignKey('users.Docente', on_delete=models.CASCADE, related_name='asignaciones')
+    materia = models.ForeignKey(Materia, on_delete=models.CASCADE, related_name='asignaciones')
+    rol = models.CharField(max_length=10, choices=RolChoices.choices)
+    activa = models.BooleanField(default=True)
+    fecha_inicio = models.DateField()
+    fecha_fin = models.DateField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Asignación Docente'
+        verbose_name_plural = 'Asignaciones Docentes'
+
+    def __str__(self):
+        return f"{self.docente} → {self.materia} ({self.get_rol_display()})"

@@ -1,18 +1,26 @@
 from django.urls import path
 from .views import (
-    SubjectListCreateView,
-    SubjectDetailView,
-    ClassroomListCreateView,
-    ClassroomDetailView,
-    ScheduleListCreateView,
-    ScheduleDetailView,
+    CarreraListCreateView,
+    CarreraDetailView,
+    MateriaListCreateView,
+    MateriaDetailView,
+    MateriaCarreraListCreateView,
+    MateriaCarreraDetailView,
+    SlotHorarioListCreateView,
+    SlotHorarioDetailView,
+    AsignacionDocenteListCreateView,
+    AsignacionDocenteDetailView,
 )
 
 urlpatterns = [
-    path('schedules/', ScheduleListCreateView.as_view(), name='schedule-list'),
-    path('schedules/<int:pk>/', ScheduleDetailView.as_view(), name='schedule-detail'),
-    path('subjects/', SubjectListCreateView.as_view(), name='subject-list'),
-    path('subjects/<int:pk>/', SubjectDetailView.as_view(), name='subject-detail'),
-    path('classrooms/', ClassroomListCreateView.as_view(), name='classroom-list'),
-    path('classrooms/<int:pk>/', ClassroomDetailView.as_view(), name='classroom-detail'),
+    path('carreras/', CarreraListCreateView.as_view(), name='carrera-list'),
+    path('carreras/<int:pk>/', CarreraDetailView.as_view(), name='carrera-detail'),
+    path('materias/', MateriaListCreateView.as_view(), name='materia-list'),
+    path('materias/<int:pk>/', MateriaDetailView.as_view(), name='materia-detail'),
+    path('materia-carrera/', MateriaCarreraListCreateView.as_view(), name='materiacarrera-list'),
+    path('materia-carrera/<int:pk>/', MateriaCarreraDetailView.as_view(), name='materiacarrera-detail'),
+    path('slots/', SlotHorarioListCreateView.as_view(), name='slot-list'),
+    path('slots/<int:pk>/', SlotHorarioDetailView.as_view(), name='slot-detail'),
+    path('asignaciones/', AsignacionDocenteListCreateView.as_view(), name='asignacion-list'),
+    path('asignaciones/<int:pk>/', AsignacionDocenteDetailView.as_view(), name='asignacion-detail'),
 ]

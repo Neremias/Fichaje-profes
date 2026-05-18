@@ -2,82 +2,121 @@ from rest_framework import generics, filters
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import Subject, Classroom, Schedule
-from .serializers import SubjectSerializer, ClassroomSerializer, ScheduleSerializer
-from apps.users.permissions import IsAdminUser, IsAdminOrReadOwn
+from .models import Carrera, Materia, MateriaCarrera, SlotHorario, AsignacionDocente
+from .serializers import (
+    CarreraSerializer,
+    MateriaSerializer,
+    MateriaCarreraSerializer,
+    SlotHorarioSerializer,
+    AsignacionDocenteSerializer,
+)
+from apps.users.permissions import IsAdminUser
 
 
-class SubjectListCreateView(generics.ListCreateAPIView):
-    serializer_class = SubjectSerializer
+class CarreraListCreateView(generics.ListCreateAPIView):
+    queryset = Carrera.objects.all()
+    serializer_class = CarreraSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['institution']
-    search_fields = ['name', 'code', 'career']
+    filterset_fields = ['institucion']
+    search_fields = ['nombre', 'codigo']
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+
+class CarreraDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Carrera.objects.all()
+    serializer_class = CarreraSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+
+class MateriaListCreateView(generics.ListCreateAPIView):
+    serializer_class = MateriaSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['activa', 'anio']
+    search_fields = ['nombre', 'codigo_siu']
+
+    def get_queryset(self):
+        return Materia.objects.all()
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+
+class MateriaDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Materia.objects.all()
+    serializer_class = MateriaSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+
+class MateriaCarreraListCreateView(generics.ListCreateAPIView):
+    queryset = MateriaCarrera.objects.select_related('materia', 'carrera').all()
+    serializer_class = MateriaCarreraSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['materia', 'carrera']
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+
+class MateriaCarreraDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = MateriaCarrera.objects.select_related('materia', 'carrera').all()
+    serializer_class = MateriaCarreraSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+
+class SlotHorarioListCreateView(generics.ListCreateAPIView):
+    queryset = SlotHorario.objects.select_related('materia').all()
+    serializer_class = SlotHorarioSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['materia', 'dia_semana']
+    search_fields = ['materia__nombre']
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+
+class SlotHorarioDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = SlotHorario.objects.select_related('materia').all()
+    serializer_class = SlotHorarioSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+
+class AsignacionDocenteListCreateView(generics.ListCreateAPIView):
+    serializer_class = AsignacionDocenteSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['docente', 'materia', 'rol', 'activa']
+    search_fields = ['docente__user__first_name', 'docente__user__last_name', 'materia__nombre']
 
     def get_queryset(self):
         user = self.request.user
-        if user.role == 'admin':
-            return Subject.objects.select_related('institution').all()
-        if user.institution:
-            return Subject.objects.filter(institution=user.institution)
-        return Subject.objects.none()
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [IsAuthenticated()]
-        return [IsAdminUser()]
-
-
-class SubjectDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Subject.objects.select_related('institution').all()
-    serializer_class = SubjectSerializer
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [IsAuthenticated()]
-        return [IsAdminUser()]
-
-
-class ClassroomListCreateView(generics.ListCreateAPIView):
-    serializer_class = ClassroomSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['institution']
-    search_fields = ['name', 'building']
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.role == 'admin':
-            return Classroom.objects.select_related('institution').all()
-        if user.institution:
-            return Classroom.objects.filter(institution=user.institution)
-        return Classroom.objects.none()
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [IsAuthenticated()]
-        return [IsAdminUser()]
-
-
-class ClassroomDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Classroom.objects.select_related('institution').all()
-    serializer_class = ClassroomSerializer
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [IsAuthenticated()]
-        return [IsAdminUser()]
-
-
-class ScheduleListCreateView(generics.ListCreateAPIView):
-    serializer_class = ScheduleSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['teacher', 'subject', 'classroom', 'day_of_week', 'is_active']
-    search_fields = ['teacher__first_name', 'teacher__last_name', 'subject__name']
-
-    def get_queryset(self):
-        user = self.request.user
-        qs = Schedule.objects.select_related('teacher', 'subject', 'classroom')
-        if user.role == 'teacher':
-            return qs.filter(teacher=user)
+        qs = AsignacionDocente.objects.select_related('docente__user', 'materia')
+        if hasattr(user, 'docente'):
+            return qs.filter(docente=user.docente)
         return qs.all()
 
     def get_permissions(self):
@@ -86,9 +125,9 @@ class ScheduleListCreateView(generics.ListCreateAPIView):
         return [IsAdminUser()]
 
 
-class ScheduleDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Schedule.objects.select_related('teacher', 'subject', 'classroom').all()
-    serializer_class = ScheduleSerializer
+class AsignacionDocenteDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = AsignacionDocente.objects.select_related('docente__user', 'materia').all()
+    serializer_class = AsignacionDocenteSerializer
 
     def get_permissions(self):
         if self.request.method == 'GET':

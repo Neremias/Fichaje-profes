@@ -1,22 +1,18 @@
 from rest_framework import serializers
+from .models import Configuracion
 
 
-class AbsenceReportRowSerializer(serializers.Serializer):
-    date = serializers.DateField()
-    subject = serializers.CharField()
-    classroom = serializers.CharField()
-    start_time = serializers.TimeField()
-    end_time = serializers.TimeField()
-    present = serializers.BooleanField()
-    checked_in_at = serializers.DateTimeField(allow_null=True)
-    gps_valid = serializers.BooleanField(allow_null=True)
-    network_valid = serializers.BooleanField(allow_null=True)
+class ConfiguracionSerializer(serializers.ModelSerializer):
+    metodo_validacion_display = serializers.CharField(
+        source='get_metodo_validacion_ubicacion_display', read_only=True
+    )
 
-
-class AttendanceSummarySerializer(serializers.Serializer):
-    teacher_id = serializers.IntegerField()
-    teacher_name = serializers.CharField()
-    total_scheduled = serializers.IntegerField()
-    total_present = serializers.IntegerField()
-    total_absent = serializers.IntegerField()
-    attendance_rate = serializers.FloatField()
+    class Meta:
+        model = Configuracion
+        fields = [
+            'id', 'dia_corte_mensual', 'red_wifi_campus',
+            'campus_latitud', 'campus_longitud', 'campus_radio_metros',
+            'metodo_validacion_ubicacion', 'metodo_validacion_display',
+            'actualizado_en', 'actualizado_por',
+        ]
+        read_only_fields = ['actualizado_en', 'actualizado_por']

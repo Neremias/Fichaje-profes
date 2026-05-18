@@ -1,10 +1,7 @@
 import ipaddress
 import math
-import io
 from datetime import date
 
-import qrcode
-from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import generics, status, filters
 from rest_framework.response import Response
@@ -12,16 +9,16 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 
-from apps.users.models import Institution
 from apps.users.permissions import IsAdminUser, IsTeacher
-from apps.schedules.models import Schedule, Classroom
-from .models import AttendanceRecord, AllowedNetwork, AllowedZone
+from apps.schedules.models import SlotHorario
+from apps.reports.models import Configuracion
+from .models import RegistroAsistencia, SolicitudEmergencia, EventoCalendario
 from .serializers import (
-    AttendanceRecordSerializer,
-    CheckInSerializer,
-    ValidateLocationSerializer,
-    AllowedNetworkSerializer,
-    AllowedZoneSerializer,
+    RegistroAsistenciaSerializer,
+    SolicitudEmergenciaSerializer,
+    SolicitudRevisionSerializer,
+    EventoCalendarioSerializer,
+    FicharSerializer,
 )
 
 
@@ -41,273 +38,222 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def validate_ip(ip_str, institution):
-    try:
-        ip = ipaddress.ip_address(ip_str)
-        for network in institution.allowed_networks.all():
-            if ip in ipaddress.ip_network(network.cidr, strict=False):
-                return True
-    except ValueError:
-        pass
-    return False
-
-
-def validate_gps(lat, lon, institution):
+def validate_gps(lat, lon, config):
     if lat is None or lon is None:
         return False
-    for zone in institution.allowed_zones.all():
-        dist = haversine_distance(lat, lon, float(zone.gps_latitude), float(zone.gps_longitude))
-        if dist <= zone.radius_meters:
-            return True
-    return False
+    if config.campus_latitud is None or config.campus_longitud is None:
+        return False
+    dist = haversine_distance(lat, lon, float(config.campus_latitud), float(config.campus_longitud))
+    return dist <= (config.campus_radio_metros or 200)
 
 
-class CheckInView(APIView):
+def validate_wifi(ip_str, config):
+    if not ip_str or not config.red_wifi_campus:
+        return False
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return ip in ipaddress.ip_network(config.red_wifi_campus, strict=False)
+    except ValueError:
+        return False
+
+
+def compute_ubicacion_validada(lat, lon, ip_str, config):
+    method = config.metodo_validacion_ubicacion
+    gps_ok = validate_gps(lat, lon, config)
+    wifi_ok = validate_wifi(ip_str, config)
+    if method == Configuracion.MetodoValidacionChoices.SOLO_GPS:
+        return gps_ok
+    if method == Configuracion.MetodoValidacionChoices.SOLO_WIFI:
+        return wifi_ok
+    return gps_ok or wifi_ok
+
+
+def get_dia_semana_str(weekday_int):
+    mapping = {0: 'lunes', 1: 'martes', 2: 'miercoles', 3: 'jueves', 4: 'viernes', 5: 'sabado'}
+    return mapping.get(weekday_int)
+
+
+class FicharView(APIView):
     permission_classes = [IsTeacher]
 
     def post(self, request):
-        serializer = CheckInSerializer(data=request.data)
+        serializer = FicharSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         data = serializer.validated_data
-        teacher = request.user
-
-        try:
-            institution = Institution.objects.get(slug=data['institution_slug'])
-        except Institution.DoesNotExist:
-            return Response({'detail': 'Institución no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
-
-        if teacher.institution and teacher.institution != institution:
-            return Response(
-                {'detail': 'No pertenece a esta institución.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
+        docente = request.user.docente
         today = timezone.localdate()
         now_time = timezone.localtime().time()
-        dow = today.weekday()
+        dia_str = get_dia_semana_str(today.weekday())
 
-        schedule = Schedule.objects.filter(
-            teacher=teacher,
-            day_of_week=dow,
-            is_active=True,
-            valid_from__lte=today,
-            valid_until__gte=today,
-            start_time__lte=now_time,
-            end_time__gte=now_time,
+        slot = SlotHorario.objects.filter(
+            materia__asignaciones__docente=docente,
+            materia__asignaciones__activa=True,
+            dia_semana=dia_str,
+            hora_inicio__lte=now_time,
+            hora_fin__gte=now_time,
         ).first()
 
-        classroom_name = ''
-        if data.get('classroom_id'):
-            try:
-                classroom = Classroom.objects.get(pk=data['classroom_id'], institution=institution)
-                classroom_name = classroom.name
-            except Classroom.DoesNotExist:
-                classroom_name = f'Aula #{data["classroom_id"]}'
-        elif schedule:
-            classroom_name = schedule.classroom.name
+        if not slot:
+            return Response(
+                {'detail': 'No tiene ningún slot horario activo en este momento.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-        if not classroom_name:
-            classroom_name = 'Sin aula'
-
-        if schedule:
-            existing = AttendanceRecord.objects.filter(
-                teacher=teacher,
-                schedule=schedule,
-                date=today,
-            ).first()
-            if existing:
-                return Response(
-                    {
-                        'detail': 'Ya registró asistencia para este horario hoy.',
-                        'record': AttendanceRecordSerializer(existing).data,
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
+        existing = RegistroAsistencia.objects.filter(
+            docente=docente, slot_horario=slot, fecha=today
+        ).first()
+        if existing:
+            return Response(
+                {
+                    'detail': 'Ya registró asistencia para este slot hoy.',
+                    'registro': RegistroAsistenciaSerializer(existing).data,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
 
         ip_str = get_client_ip(request)
-        gps_lat = data.get('gps_latitude')
-        gps_lon = data.get('gps_longitude')
+        lat = data.get('latitud')
+        lon = data.get('longitud')
+        config = Configuracion.get_solo()
+        ubicacion_validada = compute_ubicacion_validada(lat, lon, ip_str, config)
 
-        gps_valid = validate_gps(gps_lat, gps_lon, institution)
-        network_valid = validate_ip(ip_str, institution)
+        solicitud = None
+        sol_id = data.get('solicitud_emergencia_id')
+        if sol_id:
+            try:
+                solicitud = SolicitudEmergencia.objects.get(
+                    pk=sol_id, docente=docente, estado='aprobada'
+                )
+            except SolicitudEmergencia.DoesNotExist:
+                pass
 
-        record = AttendanceRecord.objects.create(
-            teacher=teacher,
-            schedule=schedule,
-            classroom_name=classroom_name,
-            date=today,
-            gps_latitude=gps_lat,
-            gps_longitude=gps_lon,
-            ip_address=ip_str or None,
-            gps_valid=gps_valid,
-            network_valid=network_valid,
-            institution=institution,
-            notes=data.get('notes', ''),
+        registro = RegistroAsistencia.objects.create(
+            docente=docente,
+            slot_horario=slot,
+            fecha=today,
+            anio=today.year,
+            tipo_clase=data['tipo_clase'],
+            hora_entrada=timezone.now(),
+            ubicacion_validada=ubicacion_validada,
+            latitud_registrada=lat,
+            longitud_registrada=lon,
+            ip_registrada=ip_str or None,
+            solicitud_emergencia=solicitud,
+            nota=data.get('nota', ''),
         )
 
         return Response(
             {
                 'detail': 'Asistencia registrada correctamente.',
-                'record': AttendanceRecordSerializer(record).data,
-                'warnings': {
-                    'gps_invalid': not gps_valid,
-                    'network_invalid': not network_valid,
-                },
+                'registro': RegistroAsistenciaSerializer(registro).data,
+                'ubicacion_validada': ubicacion_validada,
             },
             status=status.HTTP_201_CREATED,
         )
 
 
-class ValidateLocationView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        serializer = ValidateLocationSerializer(data=request.query_params)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        data = serializer.validated_data
-
-        try:
-            institution = Institution.objects.get(slug=data['institution_slug'])
-        except Institution.DoesNotExist:
-            return Response({'detail': 'Institución no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
-
-        ip_str = get_client_ip(request)
-        gps_lat = data.get('gps_latitude')
-        gps_lon = data.get('gps_longitude')
-
-        gps_valid = validate_gps(gps_lat, gps_lon, institution)
-        network_valid = validate_ip(ip_str, institution)
-
-        return Response({
-            'gps_valid': gps_valid,
-            'network_valid': network_valid,
-            'ip_address': ip_str,
-            'can_check_in': gps_valid or network_valid,
-        })
-
-
-class AttendanceRecordListView(generics.ListAPIView):
-    serializer_class = AttendanceRecordSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['date', 'teacher', 'institution', 'gps_valid', 'network_valid']
-    ordering_fields = ['date', 'checked_in_at']
-    ordering = ['-date']
-
-    def get_queryset(self):
-        user = self.request.user
-        qs = AttendanceRecord.objects.select_related('teacher', 'schedule', 'institution')
-        if user.role == 'teacher':
-            return qs.filter(teacher=user)
-        return qs.all()
-
-
-class TodaySummaryView(APIView):
+class DashboardHoyView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
         today = timezone.localdate()
-        dow = today.weekday()
+        dia_str = get_dia_semana_str(today.weekday())
 
-        institution_slug = request.query_params.get('institution')
-
-        scheduled_qs = Schedule.objects.filter(
-            day_of_week=dow,
-            is_active=True,
-            valid_from__lte=today,
-            valid_until__gte=today,
-        ).select_related('teacher', 'subject', 'classroom')
-
-        if institution_slug:
-            scheduled_qs = scheduled_qs.filter(subject__institution__slug=institution_slug)
-
+        slots = SlotHorario.objects.filter(dia_semana=dia_str).select_related('materia')
         results = []
-        for schedule in scheduled_qs:
-            record = AttendanceRecord.objects.filter(
-                teacher=schedule.teacher,
-                schedule=schedule,
-                date=today,
-            ).first()
-            results.append({
-                'teacher': f"{schedule.teacher.get_full_name()}",
-                'teacher_id': schedule.teacher.id,
-                'subject': schedule.subject.name,
-                'classroom': schedule.classroom.name,
-                'start_time': schedule.start_time.strftime('%H:%M'),
-                'end_time': schedule.end_time.strftime('%H:%M'),
-                'present': record is not None,
-                'checked_in_at': record.checked_in_at.isoformat() if record else None,
-                'gps_valid': record.gps_valid if record else None,
-                'network_valid': record.network_valid if record else None,
-            })
+        for slot in slots:
+            asignaciones = slot.materia.asignaciones.filter(activa=True).select_related('docente__user')
+            for asig in asignaciones:
+                registro = RegistroAsistencia.objects.filter(
+                    docente=asig.docente, slot_horario=slot, fecha=today
+                ).first()
+                results.append({
+                    'docente': str(asig.docente),
+                    'docente_id': asig.docente.id,
+                    'materia': slot.materia.nombre,
+                    'slot_id': slot.id,
+                    'hora_inicio': slot.hora_inicio.strftime('%H:%M'),
+                    'hora_fin': slot.hora_fin.strftime('%H:%M'),
+                    'presente': registro is not None,
+                    'hora_entrada': registro.hora_entrada.isoformat() if registro and registro.hora_entrada else None,
+                    'ubicacion_validada': registro.ubicacion_validada if registro else None,
+                })
 
         return Response({
-            'date': today.isoformat(),
-            'total_scheduled': len(results),
-            'total_present': sum(1 for r in results if r['present']),
-            'records': results,
+            'fecha': today.isoformat(),
+            'total_slots': len(results),
+            'total_presentes': sum(1 for r in results if r['presente']),
+            'registros': results,
         })
 
 
-class QRCodeView(APIView):
+class RegistroAsistenciaListView(generics.ListAPIView):
+    serializer_class = RegistroAsistenciaSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['fecha', 'tipo_clase', 'ubicacion_validada']
+    ordering_fields = ['fecha', 'hora_entrada']
+    ordering = ['-fecha']
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = RegistroAsistencia.objects.select_related('docente__user', 'slot_horario__materia')
+        if hasattr(user, 'docente'):
+            return qs.filter(docente=user.docente)
+        return qs.all()
+
+
+class SolicitudEmergenciaListCreateView(generics.ListCreateAPIView):
+    serializer_class = SolicitudEmergenciaSerializer
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, institution_slug):
+    def get_queryset(self):
+        user = self.request.user
+        qs = SolicitudEmergencia.objects.select_related('docente__user', 'slot_horario')
+        if hasattr(user, 'docente'):
+            return qs.filter(docente=user.docente)
+        return qs.all()
+
+    def perform_create(self, serializer):
+        docente = self.request.user.docente
+        serializer.save(docente=docente)
+
+
+class SolicitudEmergenciaRevisarView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, pk):
         try:
-            institution = Institution.objects.get(slug=institution_slug)
-        except Institution.DoesNotExist:
-            return Response({'detail': 'Institución no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+            solicitud = SolicitudEmergencia.objects.get(pk=pk)
+        except SolicitudEmergencia.DoesNotExist:
+            return Response({'detail': 'No encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
-        base_url = request.build_absolute_uri('/').rstrip('/')
-        qr_data = f"{base_url}/check-in?institution={institution_slug}"
+        serializer = SolicitudRevisionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(qr_data)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color='black', back_color='white')
+        data = serializer.validated_data
+        solicitud.estado = data['estado']
+        solicitud.nota_secretaria = data.get('nota_secretaria', '')
+        solicitud.revisado_por = request.user
+        solicitud.revisado_en = timezone.now()
+        solicitud.save()
 
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG')
-        buffer.seek(0)
-
-        return HttpResponse(buffer.getvalue(), content_type='image/png')
-
-
-class AllowedNetworkListCreateView(generics.ListCreateAPIView):
-    serializer_class = AllowedNetworkSerializer
-
-    def get_queryset(self):
-        return AllowedNetwork.objects.select_related('institution').all()
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [IsAuthenticated()]
-        return [IsAdminUser()]
+        return Response(SolicitudEmergenciaSerializer(solicitud).data)
 
 
-class AllowedNetworkDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = AllowedNetwork.objects.all()
-    serializer_class = AllowedNetworkSerializer
-    permission_classes = [IsAdminUser]
-
-
-class AllowedZoneListCreateView(generics.ListCreateAPIView):
-    serializer_class = AllowedZoneSerializer
-
-    def get_queryset(self):
-        return AllowedZone.objects.select_related('institution').all()
+class EventoCalendarioListCreateView(generics.ListCreateAPIView):
+    queryset = EventoCalendario.objects.all()
+    serializer_class = EventoCalendarioSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['fecha']
 
     def get_permissions(self):
         if self.request.method == 'GET':
             return [IsAuthenticated()]
         return [IsAdminUser()]
 
-
-class AllowedZoneDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = AllowedZone.objects.all()
-    serializer_class = AllowedZoneSerializer
-    permission_classes = [IsAdminUser]
+    def perform_create(self, serializer):
+        serializer.save(creado_por=self.request.user)

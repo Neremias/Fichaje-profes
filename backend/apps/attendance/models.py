@@ -1,66 +1,103 @@
 from django.db import models
-from apps.users.models import User, Institution
-from apps.schedules.models import Schedule
+from django.conf import settings
 
 
-class AllowedNetwork(models.Model):
-    institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name='allowed_networks')
-    cidr = models.CharField(max_length=50)
-    description = models.CharField(max_length=200, blank=True)
-
-    class Meta:
-        verbose_name = 'Red Permitida'
-        verbose_name_plural = 'Redes Permitidas'
-
-    def __str__(self):
-        return f"{self.institution.slug}: {self.cidr}"
-
-
-class AllowedZone(models.Model):
-    institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name='allowed_zones')
-    name = models.CharField(max_length=100)
-    gps_latitude = models.DecimalField(max_digits=10, decimal_places=7)
-    gps_longitude = models.DecimalField(max_digits=10, decimal_places=7)
-    radius_meters = models.IntegerField(default=200)
-
-    class Meta:
-        verbose_name = 'Zona Permitida'
-        verbose_name_plural = 'Zonas Permitidas'
-
-    def __str__(self):
-        return f"{self.institution.slug}: {self.name}"
-
-
-class AttendanceRecord(models.Model):
-    teacher = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='attendance_records',
-        limit_choices_to={'role': 'teacher'},
-    )
-    schedule = models.ForeignKey(
-        Schedule,
+class EventoCalendario(models.Model):
+    fecha = models.DateField()
+    descripcion = models.CharField(max_length=200)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='records',
+        related_name='eventos_creados',
     )
-    classroom_name = models.CharField(max_length=100)
-    date = models.DateField()
-    checked_in_at = models.DateTimeField(auto_now_add=True)
-    gps_latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
-    gps_longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    gps_valid = models.BooleanField(default=False)
-    network_valid = models.BooleanField(default=False)
-    institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name='attendance_records')
-    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'Evento de Calendario'
+        verbose_name_plural = 'Eventos de Calendario'
+        ordering = ['fecha']
+
+    def __str__(self):
+        return f"{self.fecha} — {self.descripcion}"
+
+
+class SolicitudEmergencia(models.Model):
+    class EstadoChoices(models.TextChoices):
+        PENDIENTE = 'pendiente', 'Pendiente'
+        APROBADA = 'aprobada', 'Aprobada'
+        RECHAZADA = 'rechazada', 'Rechazada'
+
+    docente = models.ForeignKey(
+        'users.Docente', on_delete=models.CASCADE, related_name='solicitudes_emergencia'
+    )
+    slot_horario = models.ForeignKey(
+        'schedules.SlotHorario',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='solicitudes_emergencia',
+    )
+    fecha = models.DateField()
+    nota_docente = models.TextField(null=True, blank=True)
+    estado = models.CharField(
+        max_length=10, choices=EstadoChoices.choices, default=EstadoChoices.PENDIENTE
+    )
+    nota_secretaria = models.TextField(null=True, blank=True)
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='revisiones',
+    )
+    revisado_en = models.DateTimeField(null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Solicitud de Emergencia'
+        verbose_name_plural = 'Solicitudes de Emergencia'
+        ordering = ['-creado_en']
+
+    def __str__(self):
+        return f"{self.docente} — {self.fecha} ({self.get_estado_display()})"
+
+
+class RegistroAsistencia(models.Model):
+    class TipoClaseChoices(models.TextChoices):
+        PRESENCIAL = 'presencial', 'Presencial'
+        VIRTUAL_SINCRONICA = 'virtual_sincronica', 'Virtual Sincrónica'
+        ASINCRONICA = 'asincronica', 'Asincrónica'
+
+    docente = models.ForeignKey(
+        'users.Docente', on_delete=models.CASCADE, related_name='registros_asistencia'
+    )
+    slot_horario = models.ForeignKey(
+        'schedules.SlotHorario', on_delete=models.PROTECT, related_name='registros'
+    )
+    fecha = models.DateField()
+    anio = models.SmallIntegerField()
+    tipo_clase = models.CharField(max_length=20, choices=TipoClaseChoices.choices)
+    hora_entrada = models.DateTimeField(null=True, blank=True)
+    hora_salida = models.DateTimeField(null=True, blank=True)
+    ubicacion_validada = models.BooleanField(null=True, blank=True)
+    latitud_registrada = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitud_registrada = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    ip_registrada = models.CharField(max_length=45, null=True, blank=True)
+    solicitud_emergencia = models.ForeignKey(
+        SolicitudEmergencia,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='registros',
+    )
+    nota = models.TextField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Registro de Asistencia'
         verbose_name_plural = 'Registros de Asistencia'
-        ordering = ['-date', '-checked_in_at']
-        unique_together = [('teacher', 'schedule', 'date')]
+        ordering = ['-fecha', '-hora_entrada']
+        unique_together = [('docente', 'slot_horario', 'fecha')]
 
     def __str__(self):
-        return f"{self.teacher} — {self.date} {self.classroom_name}"
+        return f"{self.docente} — {self.fecha} ({self.get_tipo_clase_display()})"

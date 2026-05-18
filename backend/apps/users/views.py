@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -6,11 +7,11 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
-from .models import User, Institution
+from .models import Docente, Usuario
 from .serializers import (
     UserSerializer,
-    UserCreateSerializer,
-    InstitutionSerializer,
+    DocenteSerializer,
+    UsuarioSerializer,
     CustomTokenObtainPairSerializer,
 )
 from .permissions import IsAdminUser
@@ -36,41 +37,50 @@ class LogoutView(APIView):
         return Response({'detail': 'Sesión cerrada correctamente.'}, status=status.HTTP_200_OK)
 
 
-class MeView(generics.RetrieveUpdateAPIView):
+class MeView(APIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = UserSerializer
 
-    def get_object(self):
-        return self.request.user
+    def get(self, request):
+        user = request.user
+        data = UserSerializer(user).data
+        if hasattr(user, 'docente'):
+            data['perfil'] = 'docente'
+            data['docente'] = DocenteSerializer(user.docente).data
+        elif hasattr(user, 'usuario'):
+            data['perfil'] = 'secretaria'
+            data['usuario'] = UsuarioSerializer(user.usuario).data
+        elif user.is_staff:
+            data['perfil'] = 'admin'
+        else:
+            data['perfil'] = 'sin_perfil'
+        return Response(data)
+
+    def patch(self, request):
+        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
-class UserListCreateView(generics.ListCreateAPIView):
+class DocenteListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAdminUser]
-    queryset = User.objects.select_related('institution').all()
-
-    def get_serializer_class(self):
-        if self.request.method == 'POST':
-            return UserCreateSerializer
-        return UserSerializer
+    queryset = Docente.objects.select_related('user').all()
+    serializer_class = DocenteSerializer
 
 
-class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
+class DocenteDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdminUser]
-    queryset = User.objects.select_related('institution').all()
-    serializer_class = UserSerializer
+    queryset = Docente.objects.select_related('user').all()
+    serializer_class = DocenteSerializer
 
 
-class InstitutionListCreateView(generics.ListCreateAPIView):
-    queryset = Institution.objects.all()
-    serializer_class = InstitutionSerializer
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [IsAuthenticated()]
-        return [IsAdminUser()]
-
-
-class InstitutionDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Institution.objects.all()
-    serializer_class = InstitutionSerializer
+class UsuarioListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAdminUser]
+    queryset = Usuario.objects.select_related('user').all()
+    serializer_class = UsuarioSerializer
+
+
+class UsuarioDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminUser]
+    queryset = Usuario.objects.select_related('user').all()
+    serializer_class = UsuarioSerializer

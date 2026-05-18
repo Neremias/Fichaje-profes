@@ -3,48 +3,17 @@ import io
 from datetime import date, timedelta, datetime
 
 from django.http import HttpResponse
+from django.utils import timezone
 from openpyxl import Workbook
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
-from apps.users.models import User
 from apps.users.permissions import IsAdminUser
-from apps.schedules.models import Schedule
-from apps.attendance.models import AttendanceRecord
-
-
-def get_absence_report(teacher, start_date, end_date):
-    results = []
-    current = start_date
-    while current <= end_date:
-        dow = current.weekday()
-        schedules = Schedule.objects.filter(
-            teacher=teacher,
-            day_of_week=dow,
-            is_active=True,
-            valid_from__lte=current,
-            valid_until__gte=current,
-        ).select_related('subject', 'classroom')
-        for schedule in schedules:
-            record = AttendanceRecord.objects.filter(
-                teacher=teacher,
-                schedule=schedule,
-                date=current,
-            ).first()
-            results.append({
-                'date': current,
-                'subject': schedule.subject.name,
-                'classroom': schedule.classroom.name,
-                'start_time': schedule.start_time,
-                'end_time': schedule.end_time,
-                'present': record is not None,
-                'checked_in_at': record.checked_in_at if record else None,
-                'gps_valid': record.gps_valid if record else None,
-                'network_valid': record.network_valid if record else None,
-            })
-        current += timedelta(days=1)
-    return results
+from apps.schedules.models import SlotHorario
+from apps.attendance.models import RegistroAsistencia
+from .models import Configuracion
+from .serializers import ConfiguracionSerializer
 
 
 def parse_date(value, fallback):
@@ -56,108 +25,120 @@ def parse_date(value, fallback):
     return fallback
 
 
-class AttendanceSummaryView(APIView):
+def get_dia_semana_str(weekday_int):
+    mapping = {0: 'lunes', 1: 'martes', 2: 'miercoles', 3: 'jueves', 4: 'viernes', 5: 'sabado'}
+    return mapping.get(weekday_int)
+
+
+def get_absence_report(docente, start_date, end_date):
+    results = []
+    current = start_date
+    while current <= end_date:
+        dia_str = get_dia_semana_str(current.weekday())
+        if dia_str is None:
+            current += timedelta(days=1)
+            continue
+        slots = SlotHorario.objects.filter(
+            dia_semana=dia_str,
+            materia__asignaciones__docente=docente,
+            materia__asignaciones__activa=True,
+        ).select_related('materia')
+        for slot in slots:
+            registro = RegistroAsistencia.objects.filter(
+                docente=docente, slot_horario=slot, fecha=current
+            ).first()
+            results.append({
+                'fecha': current,
+                'materia': slot.materia.nombre,
+                'hora_inicio': slot.hora_inicio,
+                'hora_fin': slot.hora_fin,
+                'presente': registro is not None,
+                'hora_entrada': registro.hora_entrada if registro else None,
+                'ubicacion_validada': registro.ubicacion_validada if registro else None,
+                'tipo_clase': registro.get_tipo_clase_display() if registro else None,
+            })
+        current += timedelta(days=1)
+    return results
+
+
+class ConfiguracionView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        config = Configuracion.get_solo()
+        return Response(ConfiguracionSerializer(config).data)
+
+    def patch(self, request):
+        config = Configuracion.get_solo()
+        serializer = ConfiguracionSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(actualizado_por=request.user)
+        return Response(serializer.data)
+
+
+class ResumenReporteView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
         today = date.today()
-        start = parse_date(request.query_params.get('start'), today.replace(day=1))
-        end = parse_date(request.query_params.get('end'), today)
+        start = parse_date(request.query_params.get('desde'), today.replace(day=1))
+        end = parse_date(request.query_params.get('hasta'), today)
 
         if start > end:
-            return Response({'detail': 'La fecha de inicio debe ser anterior a la fecha de fin.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': 'La fecha de inicio debe ser anterior a la fecha de fin.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        institution_slug = request.query_params.get('institution')
-        teachers_qs = User.objects.filter(role='teacher', is_active=True)
-        if institution_slug:
-            teachers_qs = teachers_qs.filter(institution__slug=institution_slug)
+        from apps.users.models import Docente
+        docentes = Docente.objects.filter(activo=True).select_related('user')
 
         summary = []
-        for teacher in teachers_qs:
-            rows = get_absence_report(teacher, start, end)
+        for docente in docentes:
+            rows = get_absence_report(docente, start, end)
             total = len(rows)
-            present = sum(1 for r in rows if r['present'])
+            present = sum(1 for r in rows if r['presente'])
             summary.append({
-                'teacher_id': teacher.id,
-                'teacher_name': teacher.get_full_name() or teacher.username,
-                'total_scheduled': total,
-                'total_present': present,
-                'total_absent': total - present,
-                'attendance_rate': round(present / total * 100, 2) if total else 0.0,
+                'docente_id': docente.id,
+                'docente_nombre': str(docente),
+                'total_programado': total,
+                'total_presente': present,
+                'total_ausente': total - present,
+                'tasa_asistencia': round(present / total * 100, 2) if total else 0.0,
             })
 
         return Response({
-            'start_date': start.isoformat(),
-            'end_date': end.isoformat(),
-            'results': summary,
+            'desde': start.isoformat(),
+            'hasta': end.isoformat(),
+            'resultados': summary,
         })
 
 
-class AbsenceReportView(APIView):
+class ExportarReporteView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
         today = date.today()
-        start = parse_date(request.query_params.get('start'), today.replace(day=1))
-        end = parse_date(request.query_params.get('end'), today)
+        start = parse_date(request.query_params.get('desde'), today.replace(day=1))
+        end = parse_date(request.query_params.get('hasta'), today)
+        fmt = request.query_params.get('formato', 'csv').lower()
 
-        if start > end:
-            return Response({'detail': 'La fecha de inicio debe ser anterior a la fecha de fin.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        teacher_id = request.query_params.get('teacher_id')
-        institution_slug = request.query_params.get('institution')
-
-        teachers_qs = User.objects.filter(role='teacher', is_active=True)
-        if teacher_id:
-            teachers_qs = teachers_qs.filter(pk=teacher_id)
-        if institution_slug:
-            teachers_qs = teachers_qs.filter(institution__slug=institution_slug)
-
-        report = []
-        for teacher in teachers_qs:
-            rows = get_absence_report(teacher, start, end)
-            for row in rows:
-                report.append({
-                    'teacher_id': teacher.id,
-                    'teacher_name': teacher.get_full_name() or teacher.username,
-                    **{k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in row.items()},
-                })
-
-        return Response({
-            'start_date': start.isoformat(),
-            'end_date': end.isoformat(),
-            'results': report,
-        })
-
-
-class ExportReportView(APIView):
-    permission_classes = [IsAdminUser]
-
-    def get(self, request):
-        today = date.today()
-        start = parse_date(request.query_params.get('start'), today.replace(day=1))
-        end = parse_date(request.query_params.get('end'), today)
-        fmt = request.query_params.get('format', 'csv').lower()
-        institution_slug = request.query_params.get('institution')
-
-        teachers_qs = User.objects.filter(role='teacher', is_active=True)
-        if institution_slug:
-            teachers_qs = teachers_qs.filter(institution__slug=institution_slug)
+        from apps.users.models import Docente
+        docentes = Docente.objects.filter(activo=True).select_related('user')
 
         rows = []
-        for teacher in teachers_qs:
-            for row in get_absence_report(teacher, start, end):
+        for docente in docentes:
+            for row in get_absence_report(docente, start, end):
                 rows.append({
-                    'Docente': teacher.get_full_name() or teacher.username,
-                    'Fecha': row['date'].isoformat(),
-                    'Materia': row['subject'],
-                    'Aula': row['classroom'],
-                    'Hora inicio': str(row['start_time']),
-                    'Hora fin': str(row['end_time']),
-                    'Presente': 'Sí' if row['present'] else 'No',
-                    'Hora fichaje': row['checked_in_at'].isoformat() if row['checked_in_at'] else '',
-                    'GPS válido': str(row['gps_valid']) if row['gps_valid'] is not None else '',
-                    'Red válida': str(row['network_valid']) if row['network_valid'] is not None else '',
+                    'Docente': str(docente),
+                    'Fecha': row['fecha'].isoformat(),
+                    'Materia': row['materia'],
+                    'Hora inicio': str(row['hora_inicio']),
+                    'Hora fin': str(row['hora_fin']),
+                    'Presente': 'Sí' if row['presente'] else 'No',
+                    'Hora entrada': row['hora_entrada'].isoformat() if row['hora_entrada'] else '',
+                    'Ubicación validada': str(row['ubicacion_validada']) if row['ubicacion_validada'] is not None else '',
+                    'Tipo clase': row['tipo_clase'] or '',
                 })
 
         filename = f"asistencia_{start}_{end}"
@@ -167,8 +148,7 @@ class ExportReportView(APIView):
             ws = wb.active
             ws.title = 'Asistencia'
             if rows:
-                headers = list(rows[0].keys())
-                ws.append(headers)
+                ws.append(list(rows[0].keys()))
                 for row in rows:
                     ws.append(list(row.values()))
             buffer = io.BytesIO()

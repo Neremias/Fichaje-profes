@@ -1,46 +1,26 @@
-from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.contrib.auth.models import User
 
 
-class Institution(models.Model):
-    name = models.CharField(max_length=100)
-    slug = models.SlugField(unique=True)
-    address = models.TextField(blank=True)
-    logo = models.ImageField(upload_to='logos/', null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+class Docente(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='docente')
+    activo = models.BooleanField(default=True)
 
     class Meta:
-        verbose_name = 'Institución'
-        verbose_name_plural = 'Instituciones'
+        verbose_name = 'Docente'
+        verbose_name_plural = 'Docentes'
 
     def __str__(self):
-        return self.name
+        return f"{self.user.get_full_name() or self.user.username}"
 
 
-class User(AbstractUser):
-    ROLE_CHOICES = [('teacher', 'Docente'), ('admin', 'Secretaría/Admin')]
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='teacher')
-    institution = models.ForeignKey(
-        Institution,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name='users',
-    )
-    phone = models.CharField(max_length=30, blank=True)
-    dni = models.CharField(max_length=20, blank=True)
+class Usuario(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='usuario')
+    activo = models.BooleanField(default=True)
 
     class Meta:
-        verbose_name = 'Usuario'
-        verbose_name_plural = 'Usuarios'
+        verbose_name = 'Usuario (Secretaría)'
+        verbose_name_plural = 'Usuarios (Secretaría)'
 
     def __str__(self):
-        return f"{self.get_full_name()} ({self.username})"
-
-    @property
-    def is_teacher(self):
-        return self.role == 'teacher'
-
-    @property
-    def is_admin_user(self):
-        return self.role == 'admin'
+        return f"{self.user.get_full_name() or self.user.username}"
