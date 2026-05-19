@@ -1,7 +1,8 @@
 import ipaddress
 import math
-from datetime import date
+from datetime import date, datetime as dt, timedelta
 
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import generics, status, filters
 from rest_framework.response import Response
@@ -84,41 +85,117 @@ class FicharView(APIView):
         data = serializer.validated_data
         docente = request.user.docente
         today = timezone.localdate()
-        now_time = timezone.localtime().time()
+        now_local = timezone.localtime()
         dia_str = get_dia_semana_str(today.weekday())
 
-        slot = SlotHorario.objects.filter(
-            materia__asignaciones__docente=docente,
-            materia__asignaciones__activa=True,
-            dia_semana=dia_str,
-            hora_inicio__lte=now_time,
-            hora_fin__gte=now_time,
-        ).first()
+        config = Configuracion.get_solo()
+        margen = timedelta(minutes=config.margen_minutos_horario or 30)
+        tipo_clase = data['tipo_clase']
+        es_virtual = tipo_clase in ('asincronica', 'virtual_sincronica')
 
-        if not slot:
+        # ── 1. Resolve slot ───────────────────────────────────────────────
+        slot_id = data.get('slot_id')
+        if slot_id:
+            slot = SlotHorario.objects.filter(
+                pk=slot_id,
+                materia__asignaciones__docente=docente,
+                materia__asignaciones__activa=True,
+            ).first()
+            if not slot:
+                return Response(
+                    {
+                        'detail': 'La materia indicada no le corresponde o no tiene asignación activa.',
+                        'codigo': 'asignacion_invalida',
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        else:
+            if dia_str is None:
+                return Response(
+                    {'detail': 'No hay clases los domingos.', 'codigo': 'sin_slot'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            now_naive = now_local.replace(tzinfo=None)
+            window_start_naive = now_naive - margen
+            window_end_naive = now_naive + margen
+            slot = SlotHorario.objects.filter(
+                materia__asignaciones__docente=docente,
+                materia__asignaciones__activa=True,
+                materia__asignaciones__fecha_inicio__lte=today,
+                dia_semana=dia_str,
+                hora_inicio__lte=window_end_naive.time(),
+                hora_fin__gte=window_start_naive.time(),
+            ).filter(
+                Q(materia__asignaciones__fecha_fin__isnull=True)
+                | Q(materia__asignaciones__fecha_fin__gte=today)
+            ).order_by('hora_inicio').first()
+
+            if not slot:
+                return Response(
+                    {
+                        'detail': 'No tiene ningún slot horario activo en este momento. Verifique el horario configurado.',
+                        'codigo': 'horario',
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+        # ── 2. Time-window validation (Req 1) ────────────────────────────
+        now_naive = now_local.replace(tzinfo=None)
+        ventana_inicio = dt.combine(today, slot.hora_inicio) - margen
+        ventana_fin = dt.combine(today, slot.hora_fin) + margen
+        if not (ventana_inicio <= now_naive <= ventana_fin):
             return Response(
-                {'detail': 'No tiene ningún slot horario activo en este momento.'},
-                status=status.HTTP_404_NOT_FOUND,
+                {
+                    'detail': (
+                        f'Escaneo fuera del margen horario. '
+                        f'Puede registrar entre las {ventana_inicio.strftime("%H:%M")} '
+                        f'y las {ventana_fin.strftime("%H:%M")}.'
+                    ),
+                    'codigo': 'horario',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # ── 3. Location validation — skip for async/virtual (Req 5) ──────
+        if es_virtual:
+            ubicacion_validada = None  # not applicable
+            ip_str = None
+            lat = None
+            lon = None
+        else:
+            ip_str = get_client_ip(request)
+            lat = data.get('latitud')
+            lon = data.get('longitud')
+            ubicacion_validada = compute_ubicacion_validada(lat, lon, ip_str, config)
+
+        # ── 4. Entry / Exit logic (Req 2) ────────────────────────────────
         existing = RegistroAsistencia.objects.filter(
             docente=docente, slot_horario=slot, fecha=today
         ).first()
+
         if existing:
+            # Exit scan
+            if existing.hora_salida is not None:
+                return Response(
+                    {
+                        'detail': 'Ya registró entrada y salida para esta clase hoy.',
+                        'codigo': 'ya_completado',
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            existing.hora_salida = timezone.now()
+            existing.save(update_fields=['hora_salida'])
             return Response(
                 {
-                    'detail': 'Ya registró asistencia para este slot hoy.',
+                    'detail': 'Escaneo exitoso — Salida registrada correctamente.',
+                    'tipo_scan': 'salida',
+                    'ubicacion_validada': ubicacion_validada,
                     'registro': RegistroAsistenciaSerializer(existing).data,
                 },
-                status=status.HTTP_409_CONFLICT,
+                status=status.HTTP_200_OK,
             )
 
-        ip_str = get_client_ip(request)
-        lat = data.get('latitud')
-        lon = data.get('longitud')
-        config = Configuracion.get_solo()
-        ubicacion_validada = compute_ubicacion_validada(lat, lon, ip_str, config)
-
+        # Entry scan
         solicitud = None
         sol_id = data.get('solicitud_emergencia_id')
         if sol_id:
@@ -134,7 +211,7 @@ class FicharView(APIView):
             slot_horario=slot,
             fecha=today,
             anio=today.year,
-            tipo_clase=data['tipo_clase'],
+            tipo_clase=tipo_clase,
             hora_entrada=timezone.now(),
             ubicacion_validada=ubicacion_validada,
             latitud_registrada=lat,
@@ -146,12 +223,67 @@ class FicharView(APIView):
 
         return Response(
             {
-                'detail': 'Asistencia registrada correctamente.',
-                'registro': RegistroAsistenciaSerializer(registro).data,
+                'detail': 'Escaneo exitoso — Entrada registrada correctamente.',
+                'tipo_scan': 'entrada',
                 'ubicacion_validada': ubicacion_validada,
+                'registro': RegistroAsistenciaSerializer(registro).data,
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class SlotActualView(APIView):
+    """
+    GET /api/asistencia/slot-actual/
+    Returns slots the authenticated teacher could fichar for right now
+    (within the configured margin around the scheduled time window).
+    """
+    permission_classes = [IsTeacher]
+
+    def get(self, request):
+        docente = request.user.docente
+        today = timezone.localdate()
+        now_local = timezone.localtime()
+        now_naive = now_local.replace(tzinfo=None)
+        dia_str = get_dia_semana_str(today.weekday())
+
+        if dia_str is None:
+            return Response({'fecha': today.isoformat(), 'slots': []})
+
+        config = Configuracion.get_solo()
+        margen = timedelta(minutes=config.margen_minutos_horario or 30)
+        window_start = (now_naive - margen).time()
+
+        slots = SlotHorario.objects.filter(
+            materia__asignaciones__docente=docente,
+            materia__asignaciones__activa=True,
+            materia__asignaciones__fecha_inicio__lte=today,
+            dia_semana=dia_str,
+            hora_fin__gt=window_start,
+        ).filter(
+            Q(materia__asignaciones__fecha_fin__isnull=True)
+            | Q(materia__asignaciones__fecha_fin__gte=today)
+        ).select_related('materia').order_by('hora_inicio').distinct()
+
+        results = []
+        for slot in slots:
+            registro = RegistroAsistencia.objects.filter(
+                docente=docente, slot_horario=slot, fecha=today
+            ).first()
+            now_time = now_naive.time()
+            results.append({
+                'slot_id': slot.id,
+                'materia_id': slot.materia.id,
+                'materia_nombre': slot.materia.nombre,
+                'materia_codigo_siu': slot.materia.codigo_siu,
+                'hora_inicio': slot.hora_inicio.strftime('%H:%M'),
+                'hora_fin': slot.hora_fin.strftime('%H:%M'),
+                'en_curso': slot.hora_inicio <= now_time <= slot.hora_fin,
+                'ya_fichado': registro is not None,
+                'tiene_salida': registro.hora_salida is not None if registro else False,
+            })
+
+        return Response({'fecha': today.isoformat(), 'slots': results})
 
 
 class DashboardHoyView(APIView):
@@ -226,9 +358,17 @@ class SolicitudEmergenciaRevisarView(APIView):
 
     def patch(self, request, pk):
         try:
-            solicitud = SolicitudEmergencia.objects.get(pk=pk)
+            solicitud = SolicitudEmergencia.objects.select_related(
+                'docente', 'slot_horario'
+            ).get(pk=pk)
         except SolicitudEmergencia.DoesNotExist:
             return Response({'detail': 'No encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if solicitud.estado != SolicitudEmergencia.EstadoChoices.PENDIENTE:
+            return Response(
+                {'detail': 'Esta solicitud ya fue revisada.'},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         serializer = SolicitudRevisionSerializer(data=request.data)
         if not serializer.is_valid():
@@ -240,6 +380,22 @@ class SolicitudEmergenciaRevisarView(APIView):
         solicitud.revisado_por = request.user
         solicitud.revisado_en = timezone.now()
         solicitud.save()
+
+        # Auto-generate attendance record when approved
+        if solicitud.estado == SolicitudEmergencia.EstadoChoices.APROBADA and solicitud.slot_horario:
+            RegistroAsistencia.objects.get_or_create(
+                docente=solicitud.docente,
+                slot_horario=solicitud.slot_horario,
+                fecha=solicitud.fecha,
+                defaults={
+                    'anio': solicitud.fecha.year,
+                    'tipo_clase': RegistroAsistencia.TipoClaseChoices.PRESENCIAL,
+                    'hora_entrada': solicitud.revisado_en,
+                    'ubicacion_validada': None,
+                    'solicitud_emergencia': solicitud,
+                    'nota': f'Asistencia generada automáticamente por aprobación de solicitud de emergencia #{solicitud.pk}',
+                },
+            )
 
         return Response(SolicitudEmergenciaSerializer(solicitud).data)
 
@@ -256,4 +412,17 @@ class EventoCalendarioListCreateView(generics.ListCreateAPIView):
         return [IsAdminUser()]
 
     def perform_create(self, serializer):
+        serializer.save(creado_por=self.request.user)
+
+
+class EventoCalendarioDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = EventoCalendario.objects.all()
+    serializer_class = EventoCalendarioSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+    def perform_update(self, serializer):
         serializer.save(creado_por=self.request.user)

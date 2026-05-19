@@ -4,6 +4,7 @@ from django.conf import settings
 
 class EventoCalendario(models.Model):
     fecha = models.DateField()
+    fecha_fin = models.DateField(null=True, blank=True)
     descripcion = models.CharField(max_length=200)
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,

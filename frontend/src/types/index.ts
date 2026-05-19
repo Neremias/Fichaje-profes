@@ -191,3 +191,101 @@ export interface SlotHorario {
   hora_fin: string;
   activo: boolean;
 }
+
+/* ── Secretaría ─────────────────────────────────────────────────── */
+
+export type RolDocente = 'titular' | 'adjunto';
+
+export interface AsignacionDocente {
+  id: number;
+  docente: number;
+  docente_nombre: string;
+  materia: number;
+  materia_nombre: string;
+  rol: RolDocente;
+  rol_display: string;
+  activa: boolean;
+  fecha_inicio: string;
+  fecha_fin: string | null;
+}
+
+export interface EventoCalendario {
+  id: number;
+  fecha: string;
+  fecha_fin: string | null;
+  descripcion: string;
+  creado_por: number | null;
+  creado_por_nombre: string | null;
+}
+
+export interface Configuracion {
+  id: number;
+  dia_corte_mensual: number;
+  margen_minutos_horario: number;
+  red_wifi_campus: string | null;
+  campus_latitud: string | null;
+  campus_longitud: string | null;
+  campus_radio_metros: number;
+  metodo_validacion_ubicacion: 'gps_o_wifi' | 'solo_wifi' | 'solo_gps';
+  metodo_validacion_display: string;
+  actualizado_en: string;
+  actualizado_por: number | null;
+}
+
+export interface SolicitudEmergencia {
+  id: number;
+  docente: number;
+  docente_nombre: string;
+  slot_horario: number | null;
+  fecha: string;
+  nota_docente: string | null;
+  estado: 'pendiente' | 'aprobada' | 'rechazada';
+  estado_display: string;
+  nota_secretaria: string | null;
+  revisado_por: number | null;
+  revisado_en: string | null;
+  creado_en: string;
+}
+
+/* ── QR / Fichar ─────────────────────────────────────────────────── */
+
+export interface SlotActual {
+  slot_id: number;
+  materia_id: number;
+  materia_nombre: string;
+  materia_codigo_siu: string;
+  hora_inicio: string;
+  hora_fin: string;
+  en_curso: boolean;
+  ya_fichado: boolean;
+  tiene_salida: boolean;
+}
+
+export interface SlotActualResponse {
+  fecha: string;
+  slots: SlotActual[];
+}
+
+export type TipoClase = 'presencial' | 'virtual_sincronica' | 'asincronica';
+
+export interface FicharPayload {
+  slot_id?: number;
+  tipo_clase: TipoClase;
+  latitud?: number | null;
+  longitud?: number | null;
+  nota?: string;
+}
+
+export interface FicharResponse {
+  detail: string;
+  tipo_scan: 'entrada' | 'salida';
+  ubicacion_validada: boolean | null;
+  registro: {
+    id: number;
+    fecha: string;
+    hora_entrada: string;
+    hora_salida: string | null;
+    tipo_clase: string;
+    ubicacion_validada: boolean | null;
+  };
+}

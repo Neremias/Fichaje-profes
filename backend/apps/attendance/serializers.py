@@ -9,8 +9,15 @@ class EventoCalendarioSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EventoCalendario
-        fields = ['id', 'fecha', 'descripcion', 'creado_por', 'creado_por_nombre']
+        fields = ['id', 'fecha', 'fecha_fin', 'descripcion', 'creado_por', 'creado_por_nombre']
         read_only_fields = ['creado_por']
+
+    def validate(self, data):
+        fecha = data.get('fecha')
+        fecha_fin = data.get('fecha_fin')
+        if fecha_fin and fecha and fecha_fin < fecha:
+            raise serializers.ValidationError('La fecha de fin no puede ser anterior a la fecha de inicio.')
+        return data
 
     def get_creado_por_nombre(self, obj):
         if obj.creado_por:
@@ -55,6 +62,7 @@ class RegistroAsistenciaSerializer(serializers.ModelSerializer):
 
 
 class FicharSerializer(serializers.Serializer):
+    slot_id = serializers.IntegerField(required=False, allow_null=True)
     tipo_clase = serializers.ChoiceField(choices=RegistroAsistencia.TipoClaseChoices.choices)
     latitud = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
     longitud = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)

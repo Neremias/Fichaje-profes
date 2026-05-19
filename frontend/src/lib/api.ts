@@ -15,6 +15,13 @@ import type {
   Carrera,
   Materia,
   SlotHorario,
+  AsignacionDocente,
+  EventoCalendario,
+  Configuracion,
+  SolicitudEmergencia,
+  SlotActualResponse,
+  FicharPayload,
+  FicharResponse,
 } from '@/types';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string) || 'http://localhost:8000';
@@ -76,7 +83,7 @@ api.interceptors.response.use(
       }
 
       try {
-        const { data } = await axios.post<{ access: string }>(`${BASE_URL}/api/auth/token/refresh/`, {
+        const { data } = await axios.post<{ access: string }>(`${BASE_URL}/api/auth/refresh/`, {
           refresh,
         });
         localStorage.setItem('access_token', data.access);
@@ -101,10 +108,10 @@ api.interceptors.response.use(
 
 export const authApi = {
   login: (credentials: LoginCredentials) =>
-    api.post<AuthTokens>('/api/auth/token/', credentials).then((r) => r.data),
+    api.post<AuthTokens>('/api/auth/login/', credentials).then((r) => r.data),
 
   refresh: (refresh: string) =>
-    api.post<{ access: string }>('/api/auth/token/refresh/', { refresh }).then((r) => r.data),
+    api.post<{ access: string }>('/api/auth/refresh/', { refresh }).then((r) => r.data),
 
   me: () => api.get<User>('/api/auth/me/').then((r) => r.data),
 };
@@ -263,4 +270,52 @@ export const slotsApi = {
     api.patch<SlotHorario>(`/api/slots/${id}/`, data).then((r) => r.data),
 
   remove: (id: number) => api.delete(`/api/slots/${id}/`),
+};
+
+export const asignacionesApi = {
+  list: (params?: Record<string, string | number | boolean | undefined>) =>
+    api.get<AsignacionDocente[]>('/api/asignaciones/', { params }).then((r) => r.data),
+
+  create: (data: Partial<AsignacionDocente>) =>
+    api.post<AsignacionDocente>('/api/asignaciones/', data).then((r) => r.data),
+
+  update: (id: number, data: Partial<AsignacionDocente>) =>
+    api.patch<AsignacionDocente>(`/api/asignaciones/${id}/`, data).then((r) => r.data),
+
+  remove: (id: number) => api.delete(`/api/asignaciones/${id}/`),
+};
+
+export const calendarioApi = {
+  list: (params?: Record<string, string | undefined>) =>
+    api.get<EventoCalendario[]>('/api/calendario/', { params }).then((r) => r.data),
+
+  create: (data: Partial<EventoCalendario>) =>
+    api.post<EventoCalendario>('/api/calendario/', data).then((r) => r.data),
+
+  remove: (id: number) => api.delete(`/api/calendario/${id}/`),
+};
+
+export const configuracionApi = {
+  get: () => api.get<Configuracion>('/api/configuracion/').then((r) => r.data),
+
+  update: (data: Partial<Configuracion>) =>
+    api.patch<Configuracion>('/api/configuracion/', data).then((r) => r.data),
+};
+
+export const solicitudesApi = {
+  list: (params?: Record<string, string | undefined>) =>
+    api.get<SolicitudEmergencia[]>('/api/asistencia/solicitudes/', { params }).then((r) => r.data),
+
+  revisar: (id: number, data: { estado: 'aprobada' | 'rechazada'; nota_secretaria?: string }) =>
+    api.patch<SolicitudEmergencia>(`/api/asistencia/solicitudes/${id}/revisar/`, data).then((r) => r.data),
+};
+
+export const ficharApi = {
+  /** GET current/upcoming slots for the authenticated teacher */
+  slotActual: () =>
+    api.get<SlotActualResponse>('/api/asistencia/slot-actual/').then((r) => r.data),
+
+  /** POST attendance record */
+  fichar: (payload: FicharPayload) =>
+    api.post<FicharResponse>('/api/asistencia/fichar/', payload).then((r) => r.data),
 };

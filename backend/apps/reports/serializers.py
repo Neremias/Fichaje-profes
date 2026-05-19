@@ -10,7 +10,7 @@ class ConfiguracionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Configuracion
         fields = [
-            'id', 'dia_corte_mensual', 'red_wifi_campus',
+            'id', 'dia_corte_mensual', 'margen_minutos_horario', 'red_wifi_campus',
             'campus_latitud', 'campus_longitud', 'campus_radio_metros',
             'metodo_validacion_ubicacion', 'metodo_validacion_display',
             'actualizado_en', 'actualizado_por',

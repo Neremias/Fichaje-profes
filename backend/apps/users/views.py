@@ -45,14 +45,18 @@ class MeView(APIView):
         data = UserSerializer(user).data
         if hasattr(user, 'docente'):
             data['perfil'] = 'docente'
+            data['role'] = 'teacher'
             data['docente'] = DocenteSerializer(user.docente).data
         elif hasattr(user, 'usuario'):
             data['perfil'] = 'secretaria'
+            data['role'] = 'admin'
             data['usuario'] = UsuarioSerializer(user.usuario).data
         elif user.is_staff:
             data['perfil'] = 'admin'
+            data['role'] = 'admin'
         else:
             data['perfil'] = 'sin_perfil'
+            data['role'] = 'teacher'
         return Response(data)
 
     def patch(self, request):

@@ -23,7 +23,7 @@ class Carrera(models.Model):
 
 
 class Materia(models.Model):
-    codigo_siu = models.CharField(max_length=20)
+    codigo_siu = models.CharField(max_length=20, unique=True)
     nombre = models.CharField(max_length=200)
     anio = models.SmallIntegerField()
     activa = models.BooleanField(default=True)

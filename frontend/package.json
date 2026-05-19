@@ -21,6 +21,7 @@
     "date-fns": "^3.6.0",
     "recharts": "^2.12.7",
     "html5-qrcode": "^2.3.8",
+    "react-qr-code": "^2.0.15",
     "react-hot-toast": "^2.4.1",
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.5.2"

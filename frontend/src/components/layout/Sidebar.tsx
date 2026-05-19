@@ -7,6 +7,7 @@ import {
   BarChart3,
   GraduationCap,
   BookOpen,
+  ClipboardList,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/teachers', icon: Users, label: 'Docentes' },
   { to: '/catalog', icon: BookOpen, label: 'Catálogo Académico' },
   { to: '/schedules', icon: Calendar, label: 'Horarios' },
+  { to: '/secretary', icon: ClipboardList, label: 'Secretaría' },
   { to: '/reports', icon: BarChart3, label: 'Reportes' },
 ];
 
