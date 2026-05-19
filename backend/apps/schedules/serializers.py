@@ -8,7 +8,7 @@ class CarreraSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Carrera
-        fields = ['id', 'institucion', 'institucion_display', 'codigo', 'nombre', 'duracion_anios']
+        fields = ['id', 'institucion', 'institucion_display', 'codigo', 'nombre', 'duracion_anios', 'activo']
 
 
 class MateriaSerializer(serializers.ModelSerializer):
@@ -32,7 +32,7 @@ class SlotHorarioSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SlotHorario
-        fields = ['id', 'materia', 'materia_nombre', 'dia_semana', 'dia_semana_display', 'hora_inicio', 'hora_fin']
+        fields = ['id', 'materia', 'materia_nombre', 'dia_semana', 'dia_semana_display', 'hora_inicio', 'hora_fin', 'activo']
 
     def validate(self, data):
         if data.get('hora_inicio') and data.get('hora_fin'):

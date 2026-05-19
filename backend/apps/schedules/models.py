@@ -11,6 +11,7 @@ class Carrera(models.Model):
     codigo = models.CharField(max_length=10)
     nombre = models.CharField(max_length=200)
     duracion_anios = models.SmallIntegerField()
+    activo = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = 'Carrera'
@@ -63,6 +64,7 @@ class SlotHorario(models.Model):
     dia_semana = models.CharField(max_length=10, choices=DiaSemanaChoices.choices)
     hora_inicio = models.TimeField()
     hora_fin = models.TimeField()
+    activo = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = 'Slot Horario'

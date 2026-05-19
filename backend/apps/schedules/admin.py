@@ -4,8 +4,8 @@ from .models import Carrera, Materia, MateriaCarrera, SlotHorario, AsignacionDoc
 
 @admin.register(Carrera)
 class CarreraAdmin(admin.ModelAdmin):
-    list_display = ['nombre', 'codigo', 'institucion', 'duracion_anios']
-    list_filter = ['institucion']
+    list_display = ['nombre', 'codigo', 'institucion', 'duracion_anios', 'activo']
+    list_filter = ['institucion', 'activo']
     search_fields = ['nombre', 'codigo']
 
 
@@ -25,8 +25,8 @@ class MateriaCarreraAdmin(admin.ModelAdmin):
 
 @admin.register(SlotHorario)
 class SlotHorarioAdmin(admin.ModelAdmin):
-    list_display = ['materia', 'dia_semana', 'hora_inicio', 'hora_fin']
-    list_filter = ['dia_semana', 'materia']
+    list_display = ['materia', 'dia_semana', 'hora_inicio', 'hora_fin', 'activo']
+    list_filter = ['dia_semana', 'materia', 'activo']
     search_fields = ['materia__nombre']
 
 

@@ -6,6 +6,7 @@ import {
   Calendar,
   BarChart3,
   GraduationCap,
+  BookOpen,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -18,6 +19,7 @@ interface SidebarProps {
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Panel Principal' },
   { to: '/teachers', icon: Users, label: 'Docentes' },
+  { to: '/catalog', icon: BookOpen, label: 'Catálogo Académico' },
   { to: '/schedules', icon: Calendar, label: 'Horarios' },
   { to: '/reports', icon: BarChart3, label: 'Reportes' },
 ];

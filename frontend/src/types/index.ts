@@ -158,3 +158,36 @@ export interface PaginatedResponse<T> {
   previous: string | null;
   results: T[];
 }
+
+/* ── Catálogo Académico ─────────────────────────────────────────── */
+
+export type InstitucionSlug = 'ices' | 'ucse' | 'otro_convenio';
+
+export interface Carrera {
+  id: number;
+  institucion: InstitucionSlug;
+  institucion_display: string;
+  codigo: string;
+  nombre: string;
+  duracion_anios: number;
+  activo: boolean;
+}
+
+export interface Materia {
+  id: number;
+  codigo_siu: string;
+  nombre: string;
+  anio: number;
+  activa: boolean;
+}
+
+export interface SlotHorario {
+  id: number;
+  materia: number;
+  materia_nombre: string;
+  dia_semana: string;
+  dia_semana_display: string;
+  hora_inicio: string;
+  hora_fin: string;
+  activo: boolean;
+}

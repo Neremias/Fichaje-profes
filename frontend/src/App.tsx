@@ -11,6 +11,7 @@ const DashboardPage = lazy(() => import('./pages/Dashboard/DashboardPage'));
 const TeachersPage = lazy(() => import('./pages/Teachers/TeachersPage'));
 const SchedulesPage = lazy(() => import('./pages/Schedules/SchedulesPage'));
 const ReportsPage = lazy(() => import('./pages/Reports/ReportsPage'));
+const CatalogPage = lazy(() => import('./pages/Catalog/CatalogPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFound/NotFoundPage'));
 
 function RootRedirect() {
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/teachers" element={<TeachersPage />} />
           <Route path="/schedules" element={<SchedulesPage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/catalog" element={<CatalogPage />} />
         </Route>
 
         {/* 404 */}

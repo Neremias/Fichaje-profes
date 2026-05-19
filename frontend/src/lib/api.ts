@@ -12,6 +12,9 @@ import type {
   DashboardSummary,
   AbsenceReport,
   PaginatedResponse,
+  Carrera,
+  Materia,
+  SlotHorario,
 } from '@/types';
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string) || 'http://localhost:8000';
@@ -215,4 +218,49 @@ export const attendanceApi = {
 
 export const institutionsApi = {
   list: () => api.get<{ id: number; name: string; slug: string; address: string }[]>('/api/institutions/').then((r) => r.data),
+};
+
+export const carrerasApi = {
+  list: (params?: Record<string, string | number | boolean | undefined>) =>
+    api.get<Carrera[]>('/api/carreras/', { params }).then((r) => r.data),
+
+  get: (id: number) => api.get<Carrera>(`/api/carreras/${id}/`).then((r) => r.data),
+
+  create: (data: Partial<Carrera>) =>
+    api.post<Carrera>('/api/carreras/', data).then((r) => r.data),
+
+  update: (id: number, data: Partial<Carrera>) =>
+    api.patch<Carrera>(`/api/carreras/${id}/`, data).then((r) => r.data),
+
+  remove: (id: number) => api.delete(`/api/carreras/${id}/`),
+};
+
+export const materiasApi = {
+  list: (params?: Record<string, string | number | boolean | undefined>) =>
+    api.get<Materia[]>('/api/materias/', { params }).then((r) => r.data),
+
+  get: (id: number) => api.get<Materia>(`/api/materias/${id}/`).then((r) => r.data),
+
+  create: (data: Partial<Materia>) =>
+    api.post<Materia>('/api/materias/', data).then((r) => r.data),
+
+  update: (id: number, data: Partial<Materia>) =>
+    api.patch<Materia>(`/api/materias/${id}/`, data).then((r) => r.data),
+
+  remove: (id: number) => api.delete(`/api/materias/${id}/`),
+};
+
+export const slotsApi = {
+  list: (params?: Record<string, string | number | boolean | undefined>) =>
+    api.get<SlotHorario[]>('/api/slots/', { params }).then((r) => r.data),
+
+  get: (id: number) => api.get<SlotHorario>(`/api/slots/${id}/`).then((r) => r.data),
+
+  create: (data: Partial<SlotHorario>) =>
+    api.post<SlotHorario>('/api/slots/', data).then((r) => r.data),
+
+  update: (id: number, data: Partial<SlotHorario>) =>
+    api.patch<SlotHorario>(`/api/slots/${id}/`, data).then((r) => r.data),
+
+  remove: (id: number) => api.delete(`/api/slots/${id}/`),
 };
